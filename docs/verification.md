@@ -2,13 +2,14 @@
 
 Validated on 9 October 2026 in the selected Linux cloud workspace with Python 3.12.14.
 
-- Full automated suite: **127 passed, 1 skipped**, in 7.83 seconds. One upstream Docling fixture deprecation warning.
+- Full automated suite after the CI reliability fix: **131 passed, 1 skipped**, in 5.32 seconds. One upstream Docling fixture deprecation warning.
 - Ruff: passed for `pdf_ingest`, `tests`, and `scripts`.
 - Frozen installation: passed; 108 installed packages checked.
 - Wheel build: passed, including the pinned dependency lock artifact. Installed-wheel fingerprint lookup also passed.
 - Real generated two-page PDFs: bounded offline PNG preview succeeded; the rendered source text was visually inspected.
 - Real Linux controls: network/write/fork denial, existing-thread synchronization, memory/file limits, one active worker, eight queued jobs, cancellation and page/job watchdog tests passed.
 - Trusted Docling/RTDETR/TableFormer dependencies initialize with the pinned CPU toolchain; tensor computation succeeds under the synchronized sandbox.
+- Concurrent database bootstrap: the initial SQLite WAL race reproduced 3 failures in 50 simultaneous starts; serialized initialization completed 100 simultaneous starts without failure. The late-success cancellation regression now forces cancellation before consuming an already completed worker result, without relying on thread scheduling sleeps.
 
 ## Outstanding work
 
