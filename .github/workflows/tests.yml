@@ -1,0 +1,20 @@
+name: Python contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.19"
+          python-version: "3.12"
+      - run: uv sync --frozen --extra layout --group dev
+      - run: .venv/bin/ruff check pdf_ingest tests
+      - run: .venv/bin/pytest
+      # Model-backed extraction is explicitly skipped without separately
+      # provisioned local artifacts. CI never downloads models from tests.

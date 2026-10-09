@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling==1.30.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pdf-ingest"
+version = "0.1.0"
+description = "Offline, reviewed PDF-to-Markdown ingestion with source provenance"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "pydantic==2.14.0",
+  "pypdf==6.20.0",
+  "pypdfium2==5.10.1",
+]
+
+[project.optional-dependencies]
+layout = ["docling==2.137.0", "torch==2.6.0+cpu", "torchvision==0.21.0+cpu", "transformers==4.57.6"]
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "reportlab==5.0.1", "ruff==0.15.7"]
+
+[project.scripts]
+pdf-ingest = "pdf_ingest.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pdf_ingest"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"uv.lock" = "pdf_ingest/dependency.lock"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["integration: requires provisioned layout models"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
