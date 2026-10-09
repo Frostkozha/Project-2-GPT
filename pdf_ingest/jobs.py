@@ -57,20 +57,32 @@ def _pid_start(pid: int) -> str | None:
 def _connect(output_root: Path) -> sqlite3.Connection:
     output_root.mkdir(parents=True, exist_ok=True)
     database = output_root / ".jobs.sqlite3"
-    if database.is_symlink():
-        raise IngestError("PATH_DENIED", "The job database may not be a symlink.")
-    connection = sqlite3.connect(database, timeout=10, isolation_level=None)
-    os.chmod(database, 0o600)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=10000")
-    connection.execute("""CREATE TABLE IF NOT EXISTS jobs (
-        job_id TEXT PRIMARY KEY, status TEXT NOT NULL, idempotency_key TEXT,
-        source_id TEXT, source_version TEXT, created_at TEXT, updated_at TEXT,
-        bundle_name TEXT, code TEXT, message TEXT, parent_pid INTEGER,
-        parent_start TEXT, worker_pid INTEGER, worker_start TEXT
-    )""")
-    return connection
+    # Switching a fresh database to WAL can return SQLITE_BUSY immediately
+    # when another connection initializes it, despite the connection timeout.
+    # Serialize only bootstrap across threads/processes, keeping normal job
+    # transactions and cancellation on their independent connections.
+    descriptor = os.open(output_root / ".jobs-init.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "r+b") as initialization:
+        fcntl.flock(initialization.fileno(), fcntl.LOCK_EX)
+        if database.is_symlink():
+            raise IngestError("PATH_DENIED", "The job database may not be a symlink.")
+        connection = sqlite3.connect(database, timeout=10, isolation_level=None)
+        try:
+            os.chmod(database, 0o600)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA busy_timeout=10000")
+            if connection.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+                connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("""CREATE TABLE IF NOT EXISTS jobs (
+                job_id TEXT PRIMARY KEY, status TEXT NOT NULL, idempotency_key TEXT,
+                source_id TEXT, source_version TEXT, created_at TEXT, updated_at TEXT,
+                bundle_name TEXT, code TEXT, message TEXT, parent_pid INTEGER,
+                parent_start TEXT, worker_pid INTEGER, worker_start TEXT
+            )""")
+        except BaseException:
+            connection.close()
+            raise
+        return connection
 
 
 def _finish(connection, job_id, status, code=None, message=None) -> None:

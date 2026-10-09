@@ -172,26 +172,90 @@ def test_late_worker_success_after_cancellation_is_discarded(tmp_path, monkeypat
     staging = tmp_path / "stage"
     staging.mkdir()
     real_popen = subprocess.Popen
-    def delayed_process(args, **kwargs):
-        result_fd = args[-1]
-        script = f"import os,time;time.sleep(.1);os.write({result_fd},b'{{\"ok\":true}}')"
-        return real_popen([sys.executable, "-c", script], **kwargs)
-    monkeypatch.setattr(jobs.subprocess, "Popen", delayed_process)
-    def cancellation():
-        time.sleep(0.04)
+    def cancelled_process(args, **kwargs):
+        # Record cancellation before returning an already successful worker.
+        # This forces the late-result boundary without scheduler-dependent
+        # sleeps racing the cancellation thread against subprocess startup.
         other = jobs._connect(output)
-        other.execute("UPDATE jobs SET status='cancelled' WHERE job_id='fixture-job'")
-        other.close()
-    cancelling = threading.Thread(target=cancellation)
-    cancelling.start()
-    limits = Limits(memory_bytes=1024**3, job_timeout_seconds=1)
+        try:
+            other.execute("UPDATE jobs SET status='cancelled' WHERE job_id='fixture-job'")
+        finally:
+            other.close()
+        result_fd = args[-1]
+        script = f"import os;os.write({result_fd},b'{{\"ok\":true}}')"
+        child = real_popen([sys.executable, "-c", script], **kwargs)
+        assert child.wait(timeout=5) == 0
+        return child
+    monkeypatch.setattr(jobs.subprocess, "Popen", cancelled_process)
+    limits = Limits(memory_bytes=1024**3, job_timeout_seconds=10)
     try:
         with pytest.raises(IngestError, match="CANCELLED"):
             jobs._execute(connection, "fixture-job", staging, {"limits": limits.model_dump(mode="json")}, limits)
         assert not list(output.glob("conversion_*"))
     finally:
-        cancelling.join()
         connection.close()
+
+
+def test_fresh_database_bootstrap_is_serialized(tmp_path, monkeypatch):
+    """Hold the first real WAL initialization while another caller arrives."""
+    entered = threading.Event()
+    second_started = threading.Event()
+    release = threading.Event()
+    real_connect = jobs.sqlite3.connect
+    count_lock = threading.Lock()
+    connections = 0
+
+    def paused_connect(*args, **kwargs):
+        nonlocal connections
+        with count_lock:
+            connections += 1
+            position = connections
+        if position == 1:
+            entered.set()
+            assert release.wait(timeout=5)
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(jobs.sqlite3, "connect", paused_connect)
+
+    def open_database(second=False):
+        if second:
+            second_started.set()
+        connection = jobs._connect(tmp_path)
+        try:
+            return connection.execute("PRAGMA journal_mode").fetchone()[0]
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(open_database)
+        try:
+            assert entered.wait(timeout=5)
+            second = executor.submit(open_database, True)
+            assert second_started.wait(timeout=5)
+            with count_lock:
+                assert connections == 1
+        finally:
+            release.set()
+        assert first.result(timeout=5) == "wal"
+        assert second.result(timeout=5) == "wal"
+
+
+def test_simultaneous_fresh_databases_allow_all_callers(tmp_path):
+    # Exercise the real SQLite race repeatedly across independent databases.
+    for index in range(20):
+        barrier = threading.Barrier(2)
+        output = tmp_path / str(index)
+
+        def open_database(_):
+            barrier.wait(timeout=5)
+            connection = jobs._connect(output)
+            try:
+                return connection.execute("PRAGMA journal_mode").fetchone()[0]
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            assert list(executor.map(open_database, range(2))) == ["wal", "wal"]
 
 
 def test_abandoned_job_is_recoverable_without_false_completion(tmp_path):
