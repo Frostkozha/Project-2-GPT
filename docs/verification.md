@@ -27,4 +27,4 @@ The installation script's dependency step is verified; its model provisioning st
 
 English OCR is explicitly unavailable in the chosen read-only worker because the Tesseract CLI adapter requires writable temporary files. The adapter/provisioning boundary exists, but end-to-end OCR needs a separately validated worker extension. Windows isolation, the reviewed 30-PDF/200-page evaluation corpus, extraction accuracy targets and intended-hardware benchmarks remain outstanding.
 
-Source code and tests are in the existing checkout, without a GitHub push or index activation. The original plan is preserved in `docs/project-plan.md`. See `README.md` for operation, `docs/acceptance.md` for T01–T30 coverage, and `docs/evaluation.md` for corpus annotations.
+The tool was merged into the repository through pull request #1. No index activation was performed. The original plan is preserved in `docs/project-plan.md`. See `README.md` for operation, `docs/acceptance.md` for T01–T30 coverage, and `docs/evaluation.md` for corpus annotations. `scripts/package_project.py` creates a verified ZIP of committed project files for sharing.

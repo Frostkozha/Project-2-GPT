@@ -2,6 +2,8 @@
 
 A local CLI implementing the traceable digital-PDF MVP in [Plan v0.1](docs/project-plan.md). It produces readable Markdown and canonical source blocks, keeps physical PDF page indices, and requires explicit review before exporting passages to a retriever. Conversion never publishes or activates an index.
 
+To package a Git checkout for sharing, run `python scripts/package_project.py --output /tmp/PDF_Ingestion_Tool.zip`. The ZIP contains committed source, tests, documentation and the dependency lockfile under `Project-2-GPT/`. Local PDFs, model weights, virtual environments and conversion outputs are omitted. The command verifies archive integrity, prints its SHA-256, and refuses to overwrite an existing file. Commit intended changes before packaging.
+
 ## Install
 
 The supported worker platform is **Linux, Python 3.12, CPU, libseccomp**. Windows is not supported by this worker sandbox. Use a Linux VM or WSL2 only after validating its seccomp/resource-limit capabilities; support is not claimed merely because Python runs there.
